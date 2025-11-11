@@ -92,7 +92,17 @@ Answer:
 
 def answer_question(query: str, bucket: str | None = None):
     chunks = search_docs(query, bucket=bucket, topk=6)
-    
+    if not chunks:
+        if is_chinese(query):
+            return (
+                "未找到相关内容，请确认文档是否已导入或换个说法再试。",
+                []
+            )
+        else:
+            return (
+                "No relevant content found. Please check if the document is loaded or try rephrasing your question.",
+                []
+            )
     context = build_context(chunks)
 
     if is_chinese(query):
@@ -109,4 +119,14 @@ def answer_question(query: str, bucket: str | None = None):
     )
     answer = resp.choices[0].message.content
 
-    return answer, chunks
+    formatted_sources = [
+        {
+            "doc": c["source"],
+            "page": c["page"],
+            "section": c["section"],
+            "snippet": (c["content"][:200] + "…") if len(c["content"]) > 200 else c["content"]
+        }
+        for c in chunks
+    ]
+
+    return answer, formatted_sources
