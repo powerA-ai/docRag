@@ -19,49 +19,58 @@ def _to_pgvector(vec: list[float]) -> str:
     return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
 
 
-def search_docs(query: str, bucket: str | None = None, topk: int = 6):
+def search_docs(query: str, bucket: str | None = None, topk: int = 6, max_distance: float = 0.4):
+    # 生成查询向量
     q_emb = embed_query(query)
-    q_vec = _to_pgvector(q_emb)
+    q_vec_literal = _to_pgvector(q_emb)  # 变成 "[0.123,0.456,...]" 这种
 
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
 
     if bucket:
-        cur.execute(
-            """
-            SELECT content, source, section, title, page
+        sql = f"""
+            SELECT content,
+                   source,
+                   section,
+                   title,
+                   page,
+                   (embedding <-> '{q_vec_literal}'::vector) AS distance
             FROM documents
             WHERE bucket = %s
-            ORDER BY embedding <-> (%s)::vector
+            ORDER BY distance
             LIMIT %s;
-            """,
-            (bucket, q_vec, topk)
-        )
+        """
+        cur.execute(sql, (bucket, topk))
     else:
-        cur.execute(
-            """
-            SELECT content, source, section, title, page
+        sql = f"""
+            SELECT content,
+                   source,
+                   section,
+                   title,
+                   page,
+                   (embedding <-> '{q_vec_literal}'::vector) AS distance
             FROM documents
-            ORDER BY embedding <-> (%s)::vector
+            ORDER BY distance
             LIMIT %s;
-            """,
-            (q_vec, topk)
-        )
+        """
+        cur.execute(sql, (topk,))
 
     rows = cur.fetchall()
     conn.close()
 
     results = []
-    for content, source, section, title, page in rows:
-        results.append({
-            "content": content,
-            "source": source,
-            "section": section,
-            "title": title,
-            "page": page,
-        })
+    for content, source, section, title, page, distance in rows:
+        # 相似度阈值过滤
+        if distance is not None and distance <= max_distance:
+            results.append({
+                "content": content,
+                "source": source,
+                "section": section,
+                "title": title,
+                "page": page,
+                "distance": float(distance),
+            })
     return results
-
 
 def is_chinese(text: str) -> bool:
     return any("\u4e00" <= ch <= "\u9fff" for ch in text)
