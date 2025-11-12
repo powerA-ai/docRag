@@ -99,25 +99,38 @@ Answer:
 """
 
 
-def answer_question(query: str, bucket: str | None = None):
-    chunks = search_docs(query, bucket=bucket, topk=6)
+def answer_question(query: str, bucket: str | None = None, topk: int = 6, history: list[dict] | None = None):
+    chunks = search_docs(query, bucket=bucket, topk=topk)
     if not chunks:
         if is_chinese(query):
-            return (
-                "未找到相关内容，请确认文档是否已导入或换个说法再试。",
-                []
-            )
+            ans = "未找到相关内容，请确认文档是否已导入或换个说法再试。"
         else:
-            return (
-                "No relevant content found. Please check if the document is loaded or try rephrasing your question.",
-                []
-            )
+            ans = "No relevant content found. Please check if the document is loaded or try rephrasing your question."
+        return ans, []
+
     context = build_context(chunks)
 
+    # 只取最近 6 轮历史，避免提示太长
+    history = history or []
+    recent = history[-6:]
+
+    # 把历史拼成一段可读文本
+    hist_text = "\n".join(
+        (("User: " if h["role"]=="user" else "Assistant: ") + h["content"].strip())
+        for h in recent
+    )
+
+    # 语言设置
+    prompt = BASE_PROMPT
     if is_chinese(query):
-        prompt = BASE_PROMPT + "\nAnswer in Chinese. Keep section numbers and document names in English.\n"
-    else:
-        prompt = BASE_PROMPT
+        prompt += "\nAnswer in Chinese. Keep section numbers and document names in English.\n"
+
+    # 合成最终提示：历史 + 上下文 + 当前问题
+    if hist_text:
+        prompt = (
+            "Conversation so far:\n"
+            f"{hist_text}\n\n"
+        ) + prompt
 
     prompt = prompt.format(context=context, question=query)
 
@@ -139,3 +152,4 @@ def answer_question(query: str, bucket: str | None = None):
     ]
 
     return answer, formatted_sources
+

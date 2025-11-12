@@ -100,71 +100,93 @@
     <div id="sources" class="sources" style="display:none;"></div>
   </div>
 
-  <script>
-    const btn = document.getElementById('askBtn');
-    const queryEl = document.getElementById('query');
-    const answerEl = document.getElementById('answer');
-    const sourcesEl = document.getElementById('sources');
-    const bucketEl = document.getElementById('bucket');
-    const topkEl = document.getElementById('topk');
+<script>
+  const btn = document.getElementById('askBtn');
+  const queryEl = document.getElementById('query');
+  const answerEl = document.getElementById('answer');
+  const sourcesEl = document.getElementById('sources');
+  const bucketEl = document.getElementById('bucket');
+  const topkEl = document.getElementById('topk');
 
-    async function ask() {
-      const query = queryEl.value.trim();
-      if (!query) {
-        alert('先输入问题');
+  // 简单的前端会话历史
+  const history = []; // [{role:"user"/"assistant", content:"..."}]
+
+  function renderChat() {
+    // 把历史对话 + 最新答案渲染在 #answer
+    const lines = history.map(h => {
+      const who = h.role === 'user' ? '🧑' : '🤖';
+      return `${who} ${h.content}`;
+    });
+    answerEl.textContent = lines.join('\n\n');
+  }
+
+  async function ask() {
+    const query = queryEl.value.trim();
+    if (!query) { alert('先输入问题'); return; }
+
+    // 用户消息入历史
+    history.push({ role: "user", content: query });
+    renderChat();
+
+    btn.disabled = true;
+    sourcesEl.style.display = 'none';
+    sourcesEl.innerHTML = '';
+
+    const payload = { query };
+    const bucket = bucketEl.value;
+    if (bucket) payload.bucket = bucket;
+    const topk = parseInt(topkEl.value || '4', 10);
+    if (topk) payload.top_k = topk;
+
+    // 只发最近 6 轮
+    payload.history = history.slice(-6);
+
+    try {
+      const res = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        history.push({ role: "assistant", content: `后端错误：${res.status}` });
+        renderChat();
         return;
       }
-      btn.disabled = true;
-      answerEl.textContent = 'Thinking...';
-      sourcesEl.style.display = 'none';
-      sourcesEl.innerHTML = '';
+      const data = await res.json();
 
-      const payload = {
-        query: query,
-      };
-      const bucket = bucketEl.value;
-      if (bucket) payload.bucket = bucket;
-      const topk = parseInt(topkEl.value || '4', 10);
-      if (topk) payload.top_k = topk;
+      // 助手机器人消息入历史
+      history.push({ role: "assistant", content: data.answer || '(无回答)' });
+      renderChat();
 
-      try {
-        const res = await fetch('/ask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+      // 展示来源
+      if (data.sources && data.sources.length > 0) {
+        sourcesEl.style.display = 'block';
+        sourcesEl.innerHTML = '<strong>来源：</strong>';
+        data.sources.forEach((s) => {
+          const div = document.createElement('div');
+          div.className = 'source-item';
+          div.textContent =
+            `${s.doc || ''}  p.${s.page ?? '-'}  ${s.section ? 'sec: ' + s.section + ' ' : ''}` +
+            (s.snippet ? ' — ' + s.snippet : '');
+          sourcesEl.appendChild(div);
         });
-        if (!res.ok) {
-          answerEl.textContent = '后端返回错误：' + res.status;
-          return;
-        }
-        const data = await res.json();
-        answerEl.textContent = data.answer || '(无回答)';
-        if (data.sources && data.sources.length > 0) {
-          sourcesEl.style.display = 'block';
-          sourcesEl.innerHTML = '<strong>来源：</strong>';
-          data.sources.forEach((s) => {
-            const div = document.createElement('div');
-            div.className = 'source-item';
-            div.textContent =
-              `${s.doc || ''}  p.${s.page ?? '-'}  ${s.section ? 'sec: ' + s.section + ' ' : ''}` +
-              (s.snippet ? ' — ' + s.snippet : '');
-            sourcesEl.appendChild(div);
-          });
-        }
-      } catch (err) {
-        console.error(err);
-        answerEl.textContent = '请求失败，请检查服务是否启动或查看控制台。';
-      } finally {
-        btn.disabled = false;
       }
+    } catch (err) {
+      history.push({ role: "assistant", content: '请求失败，请检查服务或网络。' });
+      renderChat();
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+      queryEl.value = '';   // 发完清空输入框
+      queryEl.focus();
     }
+  }
 
-    btn.addEventListener('click', ask);
-    queryEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        ask();
-      }
-    });
-  </script>
+  btn.addEventListener('click', ask);
+  queryEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ask();
+  });
+</script>
+
 </body>
 </html>

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
-
+from typing import List, Literal, Optional
 from pydantic import BaseModel
 from app.db import get_conn
 from app.config import DB_URL
@@ -44,14 +44,22 @@ def dbtest():
             "DB_URL": DB_URL,
         }
 
+class HistoryTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
 class AskRequest(BaseModel):
     query: str
-    bucket: str | None = None   # "oncor" / "ercot" / None
+    bucket: Optional[str] = None  # "oncor" / "ercot" / None
+    top_k: int = 6
+    history: List[HistoryTurn] = []
 
 @app.post("/ask")
 def ask(req: AskRequest):
-    answer, sources = answer_question(req.query, bucket=req.bucket)
-    return {
-        "answer": answer,
-        "sources": sources
-    }
+    answer, sources = answer_question(
+        req.query,
+        bucket=req.bucket,
+        topk=req.top_k,
+        history=[h.model_dump() for h in req.history],  # 传递给 RAG
+    )
+    return {"answer": answer, "sources": sources}
