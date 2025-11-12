@@ -1,11 +1,24 @@
 # app/main.py
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
+
 from pydantic import BaseModel
 from app.db import get_conn
 from app.config import DB_URL
 from app.rag import answer_question
 
 app = FastAPI()
+
+# 挂载静态目录
+static_dir = Path(__file__).resolve().parents[1] / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/ui")
+def ui():
+    return FileResponse(static_dir / "index.html")
 
 @app.get("/")
 def read_root():
