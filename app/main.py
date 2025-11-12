@@ -53,6 +53,7 @@ class AskRequest(BaseModel):
     bucket: Optional[str] = None  # "oncor" / "ercot" / None
     top_k: int = 6
     history: List[HistoryTurn] = []
+    max_distance: Optional[float] = None   # 允许前端调阈值
 
 @app.post("/ask")
 def ask(req: AskRequest):
@@ -61,5 +62,6 @@ def ask(req: AskRequest):
         bucket=req.bucket,
         topk=req.top_k,
         history=[h.model_dump() for h in req.history],  # 传递给 RAG
+        max_distance=req.max_distance,
     )
     return {"answer": answer, "sources": sources}

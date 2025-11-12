@@ -19,7 +19,7 @@ def _to_pgvector(vec: list[float]) -> str:
     return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
 
 
-def search_docs(query: str, bucket: str | None = None, topk: int = 6, max_distance: float = 0.4):
+def search_docs(query: str, bucket: str | None = None, topk: int = 6, max_distance: float = 1.2):
     # 生成查询向量
     q_emb = embed_query(query)
     q_vec_literal = _to_pgvector(q_emb)  # 变成 "[0.123,0.456,...]" 这种
@@ -60,6 +60,12 @@ def search_docs(query: str, bucket: str | None = None, topk: int = 6, max_distan
 
     results = []
     for content, source, section, title, page, distance in rows:
+        # 简单日志，便于你在控制台观察分布
+        try:
+            print(f"[RAG] distance={float(distance):.3f}  {source} p{page}")
+        except Exception:
+            pass
+
         # 相似度阈值过滤
         if distance is not None and distance <= max_distance:
             results.append({
@@ -99,8 +105,11 @@ Answer:
 """
 
 
-def answer_question(query: str, bucket: str | None = None, topk: int = 6, history: list[dict] | None = None):
-    chunks = search_docs(query, bucket=bucket, topk=topk)
+def answer_question(query: str, bucket: str | None = None, topk: int = 6, 
+                    history: list[dict] | None = None,
+                    max_distance: float | None = None):
+    chunks = search_docs(query, bucket=bucket, topk=topk,
+                         max_distance=(max_distance if max_distance is not None else 1.2))
     if not chunks:
         if is_chinese(query):
             ans = "未找到相关内容，请确认文档是否已导入或换个说法再试。"
