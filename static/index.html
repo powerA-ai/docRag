@@ -106,6 +106,7 @@
     </div>
 
     <button id="askBtn">提问</button>
+    <button id="clearBtn" style="margin-left:8px;background:#6b7280;">清空</button>
 
     <div id="answer"></div>
     <div id="sources" class="sources" style="display:none;"></div>
@@ -213,6 +214,16 @@
   btn.addEventListener('click', ask);
   queryEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ask();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    history.length = 0;
+    turn = 0;
+    answerEl.textContent = '';
+    sourcesEl.innerHTML = '';
+    sourcesEl.style.display = 'none';
+    queryEl.value = '';
+    queryEl.focus();
   });
 </script>
 
