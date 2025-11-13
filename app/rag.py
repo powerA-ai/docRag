@@ -5,6 +5,20 @@ from app.config import DB_URL, OPENAI_API_KEY
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+def log_query(query: str, bucket: str | None, answer: str):
+    try:
+        import psycopg2
+        from app.config import DB_URL
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO query_logs (query, bucket, answer) VALUES (%s, %s, %s)",
+            (query, bucket, answer[:5000])  # 防爆长
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # 日志失败不影响主流程
 
 def embed_query(text: str):
     resp = client.embeddings.create(
@@ -159,6 +173,14 @@ def answer_question(query: str, bucket: str | None = None, topk: int = 6,
         }
         for c in chunks
     ]
+
+    # log query
+    if not chunks:
+        ans = "未找到相关内容，请确认文档是否已导入或换个说法再试。" if is_chinese(query) \
+            else "No relevant content found. Please check if the document is loaded or try rephrasing your question."
+        log_query(query, bucket, ans)
+        return ans, []
+    log_query(query, bucket, answer)
 
     return answer, formatted_sources
 
