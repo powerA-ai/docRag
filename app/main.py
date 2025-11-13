@@ -5,6 +5,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from typing import List, Literal, Optional
+from typing import Dict, Any
+import psycopg2
+from app.config import DB_URL
 from pydantic import BaseModel
 from app.db import get_conn
 from app.config import DB_URL
@@ -19,6 +22,24 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 @app.get("/ui")
 def ui():
     return FileResponse(static_dir / "index.html")
+
+
+@app.get("/logs")
+def get_logs(limit: int = 50, offset: int = 0):
+    conn = psycopg2.connect(DB_URL)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, created_at, COALESCE(bucket,''), query, answer
+        FROM query_logs
+        ORDER BY id DESC
+        LIMIT %s OFFSET %s
+    """, (limit, offset))
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "created_at": r[1], "bucket": r[2], "query": r[3], "answer": r[4]}
+        for r in rows
+    ]
 
 @app.get("/")
 def read_root():
