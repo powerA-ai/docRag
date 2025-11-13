@@ -68,6 +68,17 @@
       margin-top: 0.5rem;
       align-items: center;
     }
+    .sources-block {
+      margin-top: 0.75rem;
+      padding-top: 0.5rem;
+      border-top: 1px dashed #e5e5e5;
+    }
+    .sources-title {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      font-size: 13px;
+      color: #333;
+    }
     select, input[type="number"] {
       padding: 0.25rem 0.4rem;
       border-radius: 4px;
@@ -107,6 +118,7 @@
   const sourcesEl = document.getElementById('sources');
   const bucketEl = document.getElementById('bucket');
   const topkEl = document.getElementById('topk');
+  let turn = 0; // 会话轮次
 
   // 简单的前端会话历史
   const history = []; // [{role:"user"/"assistant", content:"..."}]
@@ -129,8 +141,8 @@
     renderChat();
 
     btn.disabled = true;
-    sourcesEl.style.display = 'none';
-    sourcesEl.innerHTML = '';
+    // sourcesEl.style.display = 'none';
+    // sourcesEl.innerHTML = '';
 
     const payload = { query };
     const bucket = bucketEl.value;
@@ -140,6 +152,8 @@
 
     // 只发最近 6 轮
     payload.history = history.slice(-6);
+
+    turn += 1;
 
     try {
       const res = await fetch('/ask', {
@@ -161,15 +175,29 @@
       // 展示来源
       if (data.sources && data.sources.length > 0) {
         sourcesEl.style.display = 'block';
-        sourcesEl.innerHTML = '<strong>来源：</strong>';
+
+        // 创建一个新的来源区块
+        const block = document.createElement('div');
+        block.className = 'sources-block';
+
+        // 标题：第几轮问题
+        const title = document.createElement('div');
+        title.className = 'sources-title';
+        title.textContent = `Sources for Question ${turn}`;
+        block.appendChild(title);
+
+        // 列出本轮的每条来源
         data.sources.forEach((s) => {
           const div = document.createElement('div');
           div.className = 'source-item';
           div.textContent =
             `${s.doc || ''}  p.${s.page ?? '-'}  ${s.section ? 'sec: ' + s.section + ' ' : ''}` +
             (s.snippet ? ' — ' + s.snippet : '');
-          sourcesEl.appendChild(div);
+          block.appendChild(div);
         });
+
+        // 追加到总容器末尾（不清空旧内容）
+        sourcesEl.appendChild(block);
       }
     } catch (err) {
       history.push({ role: "assistant", content: '请求失败，请检查服务或网络。' });
