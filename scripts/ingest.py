@@ -5,6 +5,7 @@ import psycopg2
 import fitz  # PyMuPDF
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
+import hashlib
 from openai import OpenAI
 
 from app.config import DB_URL, OPENAI_API_KEY
@@ -177,17 +178,10 @@ def ensure_table():
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
     print("[INGEST] ensure documents table exists...")
+
+    # 1) 创建表（如果不存在）
     cur.execute("""
-    DO $$
-    DECLARE
-    owner text;
-    BEGIN
-    -- 确保表存在
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema='public' AND table_name='documents'
-    ) THEN
-        CREATE TABLE public.documents (
+    CREATE TABLE IF NOT EXISTS documents (
         id SERIAL PRIMARY KEY,
         content  TEXT NOT NULL,
         embedding vector(1536),
@@ -198,48 +192,109 @@ def ensure_table():
         page_start INT,
         page_end   INT,
         bucket   TEXT,
+        content_hash TEXT,
         created_at TIMESTAMP DEFAULT NOW()
-        );
-    END IF;
-
-    -- 只有当当前用户是表的所有者时才尝试创建索引
-    SELECT pg_get_userbyid(relowner) INTO owner
-    FROM pg_class WHERE relname='documents' AND relnamespace='public'::regnamespace;
-
-    IF owner = current_user THEN
-        IF NOT EXISTS (
-        SELECT 1 FROM pg_class WHERE relkind='i' AND relname='idx_documents_embedding'
-        ) THEN
-        CREATE INDEX idx_documents_embedding
-            ON public.documents USING ivfflat (embedding vector_cosine_ops);
-        END IF;
-    END IF;
-    END
-    $$;
+    );
     """)
 
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops);")
+    # 2) 给 content_hash 填已有旧数据
+    cur.execute("""
+        UPDATE documents
+        SET content_hash = md5(content)
+        WHERE content_hash IS NULL;
+    """)
+
+    # 3) 创建 UPSERT 所需的唯一索引
+    #   注意：只有当前用户是 owner 才能成功创建
+    cur.execute("""
+    DO $$
+    DECLARE
+        owner text;
+    BEGIN
+        -- 查 documents 的所有人
+        SELECT pg_get_userbyid(relowner)
+        INTO owner
+        FROM pg_class
+        WHERE relname='documents'
+          AND relnamespace='public'::regnamespace;
+
+        IF owner = current_user THEN
+            -- 如果索引不存在，则创建
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname='public'
+                  AND indexname='uniq_doc_block'
+            ) THEN
+                RAISE NOTICE 'creating unique index uniq_doc_block...';
+                CREATE UNIQUE INDEX uniq_doc_block
+                ON public.documents (
+                    source,
+                    bucket,
+                    COALESCE(section,''),
+                    page_start,
+                    page_end,
+                    content_hash
+                );
+            END IF;
+        ELSE
+            RAISE NOTICE 'skip index creation because current_user % is NOT owner %', current_user, owner;
+        END IF;
+    END$$;
+    """)
+
     conn.commit()
     conn.close()
 
-def insert_record(conn, content, emb, source, section, title, page_start, page_end, bucket):
+
+def insert_record(conn, content, emb, source, section, title,
+                  page_start, page_end, bucket):
     cur = conn.cursor()
-    # 兼容没加page_start/page_end的表：用 page 插入起始页
+
+    # 计算内容哈希
+    content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
+
     cur.execute("""
-        INSERT INTO documents (content, embedding, source, section, title, page, page_start, page_end, bucket)
-        VALUES (%s, %s::vector, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO documents (
+            content,
+            embedding,
+            source,
+            section,
+            title,
+            page,
+            page_start,
+            page_end,
+            bucket,
+            content_hash
+        )
+        VALUES (
+            %s,
+            %s::vector,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s
+        )
+        ON CONFLICT (source, bucket, COALESCE(section,''), page_start, page_end, content_hash)
+        DO NOTHING;
     """, (
         content,
         "[" + ",".join(f"{x:.6f}" for x in emb) + "]",
         source,
         section,
         title,
-        page_start,  # 兼容旧字段
+        page_start,   # 保持page = page_start 兼容旧逻辑
         page_start,
         page_end,
-        bucket
+        bucket,
+        content_hash
     ))
+
     conn.commit()
+
 
 def ingest_pdf(pdf_path: str, bucket: str):
     ensure_table()
@@ -293,6 +348,6 @@ def ingest_pdf(pdf_path: str, bucket: str):
 # ------------ CLI ------------
 if __name__ == "__main__":
     # 示例：可以按需替换为实际文件
-    # ingest_pdf("data/oncor_tariff.pdf", bucket="oncor")
-    # ingest_pdf("data/ercot_nodal_protocols.pdf", bucket="ercot")
+    # ingest_pdf("data/Tariff-for-Retail-Delivery-Service.pdf", bucket="oncor")
+    # ingest_pdf("data/September-1-2025-Nodal-Protocols.pdf", bucket="ercot")
     ingest_pdf("data/Sample.pdf", bucket="ercot")
