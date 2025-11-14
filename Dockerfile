@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app /app/app
 COPY scripts /app/scripts
 COPY data /app/data
+COPY static /app/static
 
 # FastAPI 运行所需的环境变量在 docker-compose 里传
 EXPOSE 8000
