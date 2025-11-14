@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: docrag-db
+    environment:
+      POSTGRES_DB: docragdb
+      POSTGRES_USER: raguser
+      POSTGRES_PASSWORD: ragpass
+    volumes:
+      - docragdb_data:/var/lib/postgresql/data
+      # init.sql 容器首次启动会自动执行
+      - ./docker/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"  # 本机调试用 5433 端口映射到容器的 5432 端口
+
+  app:
+    build: .
+    container_name: docrag-app
+    depends_on:
+      - db
+    environment:
+      # docker 内网里的地址：host 用服务名 db
+      DB_URL: postgresql://raguser:ragpass@db:5432/docragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    # 如果有 .env，可以这样挂载 env_file:
+    # env_file:
+    #   - ./env.docker
+
+volumes:
+  docragdb_data:
