@@ -304,9 +304,12 @@ def ingest_pdf(pdf_path: str, bucket: str):
     src_name = Path(pdf_path).name
 
     print(f"[INGEST] start ingest: {src_name} | sections={len(sections)} | bucket={bucket}")
+    RESUME_FROM_SECTION = 1250
 
     inserted = 0
     for si, sec in enumerate(sections, start=1):
+        if si < RESUME_FROM_SECTION:
+            continue
         sec_label = sec["section"]
         title = sec["title"]
         page_start = sec["page_start"]
@@ -349,5 +352,5 @@ def ingest_pdf(pdf_path: str, bucket: str):
 if __name__ == "__main__":
     # 示例：可以按需替换为实际文件
     # ingest_pdf("data/Tariff-for-Retail-Delivery-Service.pdf", bucket="oncor")
-    # ingest_pdf("data/September-1-2025-Nodal-Protocols.pdf", bucket="ercot")
-    ingest_pdf("data/Sample.pdf", bucket="ercot")
+    ingest_pdf("data/September-1-2025-Nodal-Protocols.pdf", bucket="ercot")
+    # ingest_pdf("data/Sample.pdf", bucket="ercot")

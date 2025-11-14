@@ -174,12 +174,14 @@ def answer_question(query: str, bucket: str | None = None, topk: int = 6,
 
     # 去重来源
     deduped = _dedup_sources(chunks)
+
+    SNIPPET_LEN = 5000
     formatted_sources = [
         {
             "doc": c["source"],
             "page": c["page"],
             "section": c["section"],
-            "snippet": (c["content"][:200] + "…") if len(c["content"]) > 200 else c["content"]
+            "snippet": (c["content"][:SNIPPET_LEN] + "…") if len(c["content"]) > 200 else c["content"]
         }
         for c in deduped
     ]
