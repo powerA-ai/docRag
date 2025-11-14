@@ -103,6 +103,14 @@ def build_context(chunks: list[dict]) -> str:
         parts.append(meta + "\n" + c["content"])
     return "\n\n".join(parts)
 
+def _dedup_sources(chunks, max_per_key=1):
+    by_key = {}
+    for c in chunks:
+        key = (c.get("source"), c.get("section"), c.get("page_start"), c.get("page_end"))
+        if key not in by_key or c["distance"] < by_key[key]["distance"]:
+            by_key[key] = c
+    return list(by_key.values())
+
 
 BASE_PROMPT = """You are an assistant specialized in ERCOT and Texas TDSP (e.g. Oncor) tariffs and technical documents.
 Answer ONLY using the provided context. If the answer is not in the context, say clearly that it is not found.
@@ -164,6 +172,8 @@ def answer_question(query: str, bucket: str | None = None, topk: int = 6,
     )
     answer = resp.choices[0].message.content
 
+    # 去重来源
+    deduped = _dedup_sources(chunks)
     formatted_sources = [
         {
             "doc": c["source"],
@@ -171,7 +181,7 @@ def answer_question(query: str, bucket: str | None = None, topk: int = 6,
             "section": c["section"],
             "snippet": (c["content"][:200] + "…") if len(c["content"]) > 200 else c["content"]
         }
-        for c in chunks
+        for c in deduped
     ]
 
     # log query
